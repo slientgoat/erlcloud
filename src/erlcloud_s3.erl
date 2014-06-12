@@ -26,6 +26,7 @@
 
 -include_lib("erlcloud/include/erlcloud.hrl").
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
+-include_lib("ibrowse/include/ibrowse.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 -spec new(string(), string()) -> aws_config().
@@ -878,15 +879,15 @@ s3_request(Config, Method, Host, Path, Subresources, Params, POSTData, Headers, 
     Options = Config#aws_config.http_options,
     Response = case Method of
                    get ->
-                       ibrowse:send_req(RequestURI, RequestHeaders, Method, [],
-                                        Options ++ GetOptions, Timeout);
+                       send_request(RequestURI, RequestHeaders, Method, [],
+                                    Options ++ GetOptions, Timeout);
                    delete ->
-                       ibrowse:send_req(RequestURI, RequestHeaders, Method,
-                                       [], Options, Timeout);
+                       send_request(RequestURI, RequestHeaders, Method,
+                                    [], Options, Timeout);
                    _ ->
                        NewHeaders = [{"content-type", ContentType} | RequestHeaders],
-                       ibrowse:send_req(RequestURI, NewHeaders, Method, Body,
-                                     Options, Timeout)
+                       send_request(RequestURI, NewHeaders, Method, Body,
+                                    Options, Timeout)
                end,
     case Response of
         {ok, Status, ResponseHeaders, ResponseBody} ->
@@ -931,6 +932,41 @@ format_subresource({Subresource, Value}) when is_integer(Value) ->
     Subresource ++ "=" ++ integer_to_list(Value);
 format_subresource(Subresource) ->
     Subresource.
+
+send_request(RequestURI, Headers, Method, Body, Options, Timeout) ->
+    Url = ibrowse_lib:parse_url(RequestURI),
+    {ok, Pid} = ibrowse_http_client:start_link({Url#url.host, Url#url.port}),
+    %% Mimic ibrowse (gen_server with trap_exit)
+    OldTrapExit = erlang:process_flag(trap_exit, true),
+    try
+        {ibrowse_req_id, ReqId} =
+            ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body,
+                                         [{stream_to, self()} | Options],
+                                         Timeout),
+        receive_response(Options, Pid, ReqId, undefined, undefined, [])
+    after
+        erlang:process_flag(trap_exit, OldTrapExit),
+        ibrowse_http_client:stop(Pid)
+    end.
+
+receive_response(Options, Pid, ReqId, StCode, Headers, BodyAcc) ->
+    receive
+        {ibrowse_async_response, ReqId, {error, Reason}} ->
+            {error, Reason};
+        {'EXIT', Pid, Reason} ->
+            {error, Reason};
+        {ibrowse_async_headers, ReqId, RecvStCode, RecvHeaders} ->
+            receive_response(Options, Pid, ReqId, RecvStCode, RecvHeaders, BodyAcc);
+        {ibrowse_async_response, ReqId, RecvBody} ->
+            receive_response(Options, Pid, ReqId, StCode, Headers, [RecvBody | BodyAcc]);
+        {ibrowse_async_response_end, ReqId} ->
+            case ibrowse_lib:get_value(response_format, Options, list) of
+                list ->
+                    {ok, StCode, Headers, lists:flatten(lists:reverse(BodyAcc))};
+                binary ->
+                    {ok, StCode, Headers, list_to_binary(lists:reverse(BodyAcc))}
+            end
+    end.
 
 default_config() -> erlcloud_aws:default_config().
 
