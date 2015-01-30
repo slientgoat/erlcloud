@@ -357,7 +357,7 @@ get_bucket_attribute(BucketName, AttributeName, Config)
                request_payment -> "requestPayment";
                versioning      -> "versioning"
            end,
-    Doc = s3_xml_request(Config, get, BucketName, "/", Attr, [], <<>>, []),
+    Doc = s3_xml_request(Config, get, BucketName, "/", [Attr], [], <<>>, []),
     case AttributeName of
         acl ->
             Attributes = [{owner, "Owner", fun extract_user/1},
