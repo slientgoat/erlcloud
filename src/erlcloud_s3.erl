@@ -863,7 +863,7 @@ s3_request(Config, Method, Host, Path, Subresource, Params, POSTData, Headers) -
 s3_request(Config, Method, Host, Path, Subresources, Params, POSTData, Headers, GetOptions) ->
     {ContentMD5, ContentType, Body} =
         case POSTData of
-            {PD, CT} -> {base64:encode(crypto:md5(PD)), CT, PD}; PD -> {"", "", PD}
+            {PD, CT} -> {base64:encode(crypto:hash(md5, PD)), CT, PD}; PD -> {"", "", PD}
         end,
     AmzHeaders = lists:filter(fun ({"x-amz-" ++ _, V}) when V =/= undefined -> true; (_) -> false end, Headers),
     Date = httpd_util:rfc1123_date(erlang:localtime()),
