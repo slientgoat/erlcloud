@@ -638,7 +638,7 @@ put_object(BucketName, Key, Value, Options, HTTPHeaders0, Config)
                                      false -> {"application/octet-stream", HTTPHeaders0}
                                  end,
     RequestHeaders = [{"x-amz-acl", encode_acl(proplists:get_value(acl, Options))}|HTTPHeaders]
-        ++ [{["x-amz-meta-"|string:to_lower(MKey)], MValue} ||
+        ++ [{"x-amz-meta-" ++ string:to_lower(MKey), MValue} ||
                {MKey, MValue} <- proplists:get_value(meta, Options, [])],
     ReturnResponse = proplists:get_value(return_response, Options, false),
     POSTData = {iolist_to_binary(Value), ContentType},
