@@ -10,7 +10,7 @@
          set_bucket_attribute/3, set_bucket_attribute/4,
          list_objects/1, list_objects/2, list_objects/3,
          list_object_versions/1, list_object_versions/2, list_object_versions/3,
-         copy_object/4, copy_object/5, copy_object/6,
+         copy_object/4, copy_object/5, copy_object/6, copy_object/7,
          delete_object/2, delete_object/3,
          delete_object_version/3, delete_object_version/4,
          get_object/2, get_object/3, get_object/4,
@@ -167,10 +167,19 @@ copy_object(DestBucketName, DestKeyName, SrcBucketName, SrcKeyName, Options) ->
 
 -spec copy_object(string(), string(), string(), string(), proplist(), aws_config()) -> proplist().
 copy_object(DestBucketName, DestKeyName, SrcBucketName, SrcKeyName, Options, Config) ->
+    copy_object(DestBucketName, DestKeyName, SrcBucketName, SrcKeyName, Options, [], Config).
+
+
+-spec copy_object(string(), string(), string(), string(), proplist(), [{string(), string()}], aws_config()) -> proplist().
+copy_object(DestBucketName, DestKeyName, SrcBucketName, SrcKeyName, Options, HTTPHeaders0, Config) ->
     SrcVersion = case proplists:get_value(version_id, Options) of
                      undefined -> "";
                      VersionID -> ["?versionId=", VersionID]
                  end,
+    {PostData, HTTPHeaders} = case lists:keytake("Content-Type", 1, HTTPHeaders0) of
+                                     {value, {_, CType}, Rest} -> {{<<>>, CType}, Rest};
+                                     false -> {<<>>, HTTPHeaders0}
+                                 end,
     RequestHeaders =
         [{"x-amz-copy-source", [SrcBucketName, $/, SrcKeyName, SrcVersion]},
          {"x-amz-metadata-directive", proplists:get_value(metadata_directive, Options)},
@@ -178,9 +187,12 @@ copy_object(DestBucketName, DestKeyName, SrcBucketName, SrcKeyName, Options, Con
          {"x-amz-copy-source-if-none-match", proplists:get_value(if_none_match, Options)},
          {"x-amz-copy-source-if-unmodified-since", proplists:get_value(if_unmodified_since, Options)},
          {"x-amz-copy-source-if-modified-since", proplists:get_value(if_modified_since, Options)},
-         {"x-amz-acl", encode_acl(proplists:get_value(acl, Options))}],
+         {"x-amz-acl", encode_acl(proplists:get_value(acl, Options))}]
+        ++ [{"x-amz-meta-" ++ string:to_lower(MKey), MValue} ||
+            {MKey, MValue} <- proplists:get_value(meta, Options, [])]
+        ++ HTTPHeaders,
     {Headers, _Body} = s3_request(Config, put, DestBucketName, [$/|DestKeyName],
-                                  [], [], <<>>, RequestHeaders),
+                                  [], [], PostData, RequestHeaders),
     [{copy_source_version_id, proplists:get_value("x-amz-copy-source-version-id", Headers, "false")},
      {version_id, proplists:get_value("x-amz-version-id", Headers, "null")}].
 
